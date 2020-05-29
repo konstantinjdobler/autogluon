@@ -23,8 +23,8 @@ class ENAS_Scheduler(object):
     """ENAS Scheduler, which automatically creates LSTM controller based on the search spaces.
     """
     def __init__(self, supernet, train_set='imagenet', val_set=None,
-                 train_fn=default_train_fn, eval_fn=default_val_fn,
-                 train_args={}, val_args={}, reward_fn= default_reward_fn,
+                 train_fn=default_train_fn, eval_fn=default_val_fn, post_epoch_fn=None,
+                 train_args={}, val_args={}, reward_fn=default_reward_fn,
                  num_gpus=0, num_cpus=4,
                  batch_size=256, epochs=120, warmup_epochs=5,
                  controller_lr=1e-3, controller_type='lstm',
@@ -37,6 +37,7 @@ class ENAS_Scheduler(object):
         self.train_fn = train_fn
         self.eval_fn = eval_fn
         self.reward_fn = reward_fn
+        self.post_epoch_fn = post_epoch_fn
         self.checkname = checkname
         self.plot_frequency = plot_frequency
         self.epochs = epochs
@@ -131,6 +132,8 @@ class ENAS_Scheduler(object):
                     tbar.set_description('avg reward: {:.2f}'.format(self.baseline))
                 idx += 1
             self.validation()
+            if self.post_epoch_fn:
+                self.post_epoch_fn(self.supernet, epoch)
             self.save()
             msg = 'epoch {}, val_acc: {:.2f}'.format(epoch, self.val_acc)
             if self.baseline:
