@@ -32,7 +32,12 @@ class ENAS_Scheduler(object):
                  update_arch_frequency=20, checkname='./enas/checkpoint.ag',
                  plot_frequency=0, **kwargs):
         num_cpus = get_cpu_count() if num_cpus > get_cpu_count() else num_cpus
-        num_gpus = get_gpu_count() if num_gpus > get_gpu_count() else num_gpus
+        if type(type(num_gpus) == tuple or type(num_gpus) == list):
+            for gpu in num_gpus:
+                if gpu>= get_gpu_count():
+                    raise ValueError('This gpu index does not exist (not enough gpus).')
+        else:
+            num_gpus = get_gpu_count() if num_gpus > get_gpu_count() else num_gpus
         self.supernet = supernet
         self.train_fn = train_fn
         self.eval_fn = eval_fn
@@ -76,7 +81,10 @@ class ENAS_Scheduler(object):
         """Initialize framework related miscs, such as train/val data and train/val
         function arguments.
         """
-        ctx = [mx.gpu(i) for i in range(num_gpus)] if num_gpus > 0 else [mx.cpu(0)]
+        if(type(num_gpus) == tuple or type(num_gpus) == list):
+            ctx = [mx.gpu(i) for i in num_gpus]
+        else:
+            ctx = [mx.gpu(i) for i in range(num_gpus)] if num_gpus > 0 else [mx.cpu(0)]
         self.supernet.collect_params().reset_ctx(ctx)
         self.supernet.hybridize()
         dataset_name = train_set
