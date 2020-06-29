@@ -30,9 +30,11 @@ class ENAS_Scheduler(object):
                  controller_lr=1e-3, controller_type='lstm',
                  controller_batch_size=10, ema_baseline_decay=0.95,
                  update_arch_frequency=20, checkname='./enas/checkpoint.ag',
-                 plot_frequency=0, **kwargs):
+                 plot_frequency=0,
+                 custom_batch_fn = None,
+                 **kwargs):
         num_cpus = get_cpu_count() if num_cpus > get_cpu_count() else num_cpus
-        if type(type(num_gpus) == tuple or type(num_gpus) == list):
+        if type(num_gpus) == tuple or type(num_gpus) == list:
             for gpu in num_gpus:
                 if gpu>= get_gpu_count():
                     raise ValueError('This gpu index does not exist (not enough gpus).')
@@ -51,7 +53,7 @@ class ENAS_Scheduler(object):
         kwspaces = self.supernet.kwspaces
 
         self.initialize_miscs(train_set, val_set, batch_size, num_cpus, num_gpus,
-                              train_args, val_args)
+                              train_args, val_args, custom_batch_fn= custom_batch_fn)
 
         # create RL searcher/controller
         self.baseline = None
@@ -77,7 +79,7 @@ class ENAS_Scheduler(object):
         self._prefetch_controller()
 
     def initialize_miscs(self, train_set, val_set, batch_size, num_cpus, num_gpus,
-                         train_args, val_args):
+                         train_args, val_args, custom_batch_fn=None):
         """Initialize framework related miscs, such as train/val data and train/val
         function arguments.
         """
@@ -102,6 +104,9 @@ class ENAS_Scheduler(object):
             self.val_data = DataLoader(
                     val_set, batch_size=batch_size, shuffle=True,
                     num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
+        elif isinstance(train_set, gluon.data.dataloader.DataLoader):
+            self.train_data = train_set
+            self.val_data = val_set
         else:
             self.train_data = train_set
             self.val_data = val_set
@@ -113,7 +118,10 @@ class ENAS_Scheduler(object):
         self.val_args['ctx'] = ctx
         self.val_args['batch_fn'] = imagenet_batch_fn if dataset_name == 'imagenet' else default_batch_fn
         self.train_args['ctx'] = ctx
-        self.train_args['batch_fn'] = imagenet_batch_fn if dataset_name == 'imagenet' else default_batch_fn
+        if custom_batch_fn is None:
+            self.train_args['batch_fn'] = imagenet_batch_fn if dataset_name == 'imagenet' else default_batch_fn
+        else:
+            self.train_args['batch_fn'] = custom_batch_fn
         self.ctx = ctx
 
     def run(self):
