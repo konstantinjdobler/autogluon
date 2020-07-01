@@ -23,18 +23,20 @@ class ENAS_Scheduler(object):
     """ENAS Scheduler, which automatically creates LSTM controller based on the search spaces.
     """
     def __init__(self, supernet, train_set='imagenet', val_set=None,
-                 train_fn=default_train_fn, eval_fn=default_val_fn, post_epoch_fn=None,
+                 train_fn=default_train_fn, eval_fn=default_val_fn, post_epoch_fn=None, post_epoch_save=None,
                  train_args={}, val_args={}, reward_fn=default_reward_fn,
                  num_gpus=0, num_cpus=4,
                  batch_size=256, epochs=120, warmup_epochs=5,
                  controller_lr=1e-3, controller_type='lstm',
                  controller_batch_size=10, ema_baseline_decay=0.95,
                  update_arch_frequency=20, checkname='./enas/checkpoint.ag',
-                 plot_frequency=0, **kwargs):
+                 plot_frequency=0,
+                 custom_batch_fn = None,
+                 **kwargs):
         num_cpus = get_cpu_count() if num_cpus > get_cpu_count() else num_cpus
-        if type(num_gpus) == tuple or type(num_gpus) == list:
+        if (type(num_gpus) == tuple) or (type(num_gpus) == list):
             for gpu in num_gpus:
-                if gpu>= get_gpu_count():
+                if gpu >= get_gpu_count():
                     raise ValueError('This gpu index does not exist (not enough gpus).')
         else:
             num_gpus = get_gpu_count() if num_gpus > get_gpu_count() else num_gpus
@@ -43,6 +45,7 @@ class ENAS_Scheduler(object):
         self.eval_fn = eval_fn
         self.reward_fn = reward_fn
         self.post_epoch_fn = post_epoch_fn
+        self.post_epoch_save = post_epoch_save
         self.checkname = checkname
         self.plot_frequency = plot_frequency
         self.epochs = epochs
@@ -51,7 +54,7 @@ class ENAS_Scheduler(object):
         kwspaces = self.supernet.kwspaces
 
         self.initialize_miscs(train_set, val_set, batch_size, num_cpus, num_gpus,
-                              train_args, val_args)
+                              train_args, val_args, custom_batch_fn= custom_batch_fn)
 
         # create RL searcher/controller
         self.baseline = None
@@ -77,7 +80,7 @@ class ENAS_Scheduler(object):
         self._prefetch_controller()
 
     def initialize_miscs(self, train_set, val_set, batch_size, num_cpus, num_gpus,
-                         train_args, val_args):
+                         train_args, val_args, custom_batch_fn=None):
         """Initialize framework related miscs, such as train/val data and train/val
         function arguments.
         """
@@ -102,6 +105,9 @@ class ENAS_Scheduler(object):
             self.val_data = DataLoader(
                     val_set, batch_size=batch_size, shuffle=True,
                     num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
+        elif isinstance(train_set, gluon.data.dataloader.DataLoader):
+            self.train_data = train_set
+            self.val_data = val_set
         else:
             self.train_data = train_set
             self.val_data = val_set
@@ -113,7 +119,10 @@ class ENAS_Scheduler(object):
         self.val_args['ctx'] = ctx
         self.val_args['batch_fn'] = imagenet_batch_fn if dataset_name == 'imagenet' else default_batch_fn
         self.train_args['ctx'] = ctx
-        self.train_args['batch_fn'] = imagenet_batch_fn if dataset_name == 'imagenet' else default_batch_fn
+        if custom_batch_fn is None:
+            self.train_args['batch_fn'] = imagenet_batch_fn if dataset_name == 'imagenet' else default_batch_fn
+        else:
+            self.train_args['batch_fn'] = custom_batch_fn
         self.ctx = ctx
 
     def run(self):
@@ -142,6 +151,8 @@ class ENAS_Scheduler(object):
             self.validation()
             if self.post_epoch_fn:
                 self.post_epoch_fn(self.supernet, epoch)
+            if self.post_epoch_save:
+                self.post_epoch_save(self.supernet, epoch)
             self.save()
             msg = 'epoch {}, val_acc: {:.2f}'.format(epoch, self.val_acc)
             if self.baseline:
