@@ -32,9 +32,9 @@ class ENAS_Scheduler(object):
                  update_arch_frequency=20, checkname='./enas/checkpoint.ag',
                  plot_frequency=0, **kwargs):
         num_cpus = get_cpu_count() if num_cpus > get_cpu_count() else num_cpus
-        if (type(num_gpus) == tuple) or (type(num_gpus) == list):
+        if (num_gpus == tuple) or (type(num_gpus) == list):
             for gpu in num_gpus:
-                if gpu>= get_gpu_count():
+                if gpu >= get_gpu_count():
                     raise ValueError('This gpu index does not exist (not enough gpus).')
         else:
             num_gpus = get_gpu_count() if num_gpus > get_gpu_count() else num_gpus
