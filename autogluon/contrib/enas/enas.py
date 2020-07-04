@@ -378,6 +378,8 @@ class ENAS_Unit(gluon.HybridBlock):
                 if j > self._latency_warmup_times:
                     latency_i += end_time - start_time
             self._latency[i] = latency_i / self._latency_benchmark_times
+            if hasattr(op, 'latency_function'):
+                self._latency[i] = op.latency_function(self._latency[i])
         self.latency_evaluated = True
         return y
 
