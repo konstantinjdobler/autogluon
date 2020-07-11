@@ -118,6 +118,9 @@ class ENAS_Scheduler(object):
         elif isinstance(train_set, gluon.data.dataloader.DataLoader):
             self.train_data = train_set
             self.val_data = val_set
+        elif isinstance(train_set, mx.io.io.MXDataIter):
+            self.train_data = train_set
+            self.val_data = val_set
         else:
             self.train_data = train_set
             self.val_data = val_set
@@ -127,7 +130,10 @@ class ENAS_Scheduler(object):
                 if len(train_args) == 0 else train_args
         self.val_args = val_args
         self.val_args['ctx'] = ctx
-        self.val_args['batch_fn'] = imagenet_batch_fn if dataset_name == 'imagenet' else default_batch_fn
+        if custom_batch_fn is None:
+            self.val_args['batch_fn'] = imagenet_batch_fn if dataset_name == 'imagenet' else default_batch_fn
+        else:
+            self.val_args['batch_fn'] = custom_batch_fn
         self.train_args['ctx'] = ctx
         if custom_batch_fn is None:
             self.train_args['batch_fn'] = imagenet_batch_fn if dataset_name == 'imagenet' else default_batch_fn

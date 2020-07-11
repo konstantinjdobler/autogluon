@@ -11,18 +11,32 @@ __all__ = ['enas_unit', 'enas_net',
            'Zero_Unit', 'ENAS_Unit', 'ENAS_Sequential']
 
 def enas_unit(**kwvars):
+    with_zero = False
+    if 'with_zero' in kwvars:
+        with_zero = kwvars.pop('with_zero')
+    share_parameters = False
+    if 'share_parameters' in kwvars:
+        share_parameters = kwvars.pop('share_parameters')
     def registered_class(Cls):
         class enas_unit(ENAS_Unit):
             def __init__(self, *args, **kwargs):
                 kwvars.update(kwargs)
-                with_zero=False
-                if 'with_zero' in kwvars:
-                    with_zero = kwvars.pop('with_zero')
                 blocks = []
                 self._args = []
-                for arg in self.get_config_grid(kwvars):
-                    blocks.append(Cls(*args, **arg))
-                    self._args.append(json.dumps(arg))
+                configuration_grid = self.get_config_grid(kwvars)
+                if share_parameters:
+                    first_arg = configuration_grid.pop(0)
+                    first_block = (Cls(*args, **first_arg))
+                    blocks.append(first_block)
+                    self._args.append(json.dumps(first_arg))
+                    for arg in configuration_grid:
+                        next_block = Cls(*args, parameter_sharing_partner=first_block, **arg)
+                        blocks.append(next_block)
+                        self._args.append(json.dumps(arg))
+                else:
+                    for arg in configuration_grid:
+                        blocks.append(Cls(*args, **arg))
+                        self._args.append(json.dumps(arg))
                 if with_zero:
                     self._args.append(None)
                 super().__init__(*blocks, with_zero=with_zero)
@@ -364,6 +378,8 @@ class ENAS_Unit(gluon.HybridBlock):
                 if j > self._latency_warmup_times:
                     latency_i += end_time - start_time
             self._latency[i] = latency_i / self._latency_benchmark_times
+            if hasattr(op, 'latency_function'):
+                self._latency[i] = op.latency_function(self._latency[i])
         self.latency_evaluated = True
         return y
 
