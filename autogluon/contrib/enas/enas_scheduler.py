@@ -23,8 +23,8 @@ class ENAS_Scheduler(object):
     """ENAS Scheduler, which automatically creates LSTM controller based on the search spaces.
     """
     def __init__(self, supernet, train_set='imagenet', val_set=None,
-                 train_fn=default_train_fn, eval_fn=default_val_fn, post_epoch_fn=None, post_epoch_save=None,
-                 train_args={}, val_args={}, reward_fn=default_reward_fn,
+                 train_fn=default_train_fn, eval_fn=default_val_fn, post_epoch_fn=None,
+                 post_epoch_eval=None, train_args={}, val_args={}, reward_fn=default_reward_fn,
                  num_gpus=0, num_cpus=4,
                  batch_size=256, epochs=120, warmup_epochs=5,
                  controller_lr=1e-3, controller_type='lstm',
@@ -45,7 +45,7 @@ class ENAS_Scheduler(object):
         self.eval_fn = eval_fn
         self.reward_fn = reward_fn
         self.post_epoch_fn = post_epoch_fn
-        self.post_epoch_save = post_epoch_save
+        self.post_epoch_eval = post_epoch_eval
         self.checkname = checkname
         self.plot_frequency = plot_frequency
         self.epochs = epochs
@@ -98,12 +98,22 @@ class ENAS_Scheduler(object):
             val_set = get_built_in_dataset(dataset_name, train=False, batch_size=batch_size,
                                            num_workers=num_cpus, shuffle=True)
         if isinstance(train_set, gluon.data.Dataset):
+            # split the validation set into an evaluation and validation set
+            eval_part = round(len(val_set) * 0.4)
+            eval_set = val_set[0:eval_part]
+            eval_set = mx.gluon.data.ArrayDataset(eval_set[0], eval_set[1])
+            val_set = val_set[eval_part:]
+            val_set = mx.gluon.data.ArrayDataset(val_set[0], val_set[1])
+
             self.train_data = DataLoader(
                     train_set, batch_size=batch_size, shuffle=True,
                     last_batch="discard", num_workers=num_cpus)
             # very important, make shuffle for training contoller
             self.val_data = DataLoader(
                     val_set, batch_size=batch_size, shuffle=True,
+                    num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
+            self.eval_data = DataLoader(
+                    eval_set, batch_size=batch_size, shuffle=True,
                     num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
         elif isinstance(train_set, gluon.data.dataloader.DataLoader):
             self.train_data = train_set
@@ -149,6 +159,7 @@ class ENAS_Scheduler(object):
                     tbar.set_description('avg reward: {:.2f}'.format(self.baseline))
                 idx += 1
             self.validation()
+            self.evaluation(epoch)
             if self.post_epoch_fn:
                 self.post_epoch_fn(self.supernet, epoch)
             if self.post_epoch_save:
@@ -176,6 +187,21 @@ class ENAS_Scheduler(object):
 
         self.val_acc = reward
         self.training_history.append(reward)
+
+    def evaluation(self, epoch):
+        if hasattr(self.eval_data, 'reset'): self.eval_data.reset()
+        # data iter, avoid memory leak
+        it = iter(self.eval_data)
+        if hasattr(it, 'reset_sample_times'): it.reset_sample_times()
+        tbar = tqdm(it)
+        # update network arc
+        config = self.controller.inference()
+        self.supernet.sample(**config)
+        metric = mx.metric.Accuracy()
+        for batch in tbar:
+            self.eval_fn(self.supernet, batch, metric=metric, **self.val_args)
+            reward = metric.get()[1]
+            tbar.set_description('Epoch {} Evaluation Acc: {}'.format(epoch, reward))
 
     def _sample_controller(self):
         assert self._rcvd_idx < self._sent_idx, "rcvd_idx must be smaller than sent_idx"
