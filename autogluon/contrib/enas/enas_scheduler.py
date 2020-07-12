@@ -201,9 +201,9 @@ class ENAS_Scheduler(object):
             if self.post_epoch_save:
                 self.post_epoch_save(self.supernet, epoch)
             self.save()
-            msg = 'epoch {}, val_acc: {:.2f}, eval_acc: {:.2f}'.format(epoch, self.val_acc, self.eval_acc)
+            msg = 'epoch {}, val_acc: {:.4f}, eval_acc: {:.4f}'.format(epoch, self.val_acc, self.eval_acc)
             if self.baseline:
-                msg += ', avg reward: {:.2f}'.format(self.baseline)
+                msg += ', avg reward: {:.4f}'.format(self.baseline)
             tq.set_description(msg)
 
     def validation(self):
