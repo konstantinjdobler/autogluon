@@ -116,12 +116,26 @@ class ENAS_Scheduler(object):
                     eval_set, batch_size=batch_size, shuffle=True,
                     num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
         elif isinstance(train_set, gluon.data.dataloader.DataLoader):
+            eval_part = round(len(val_set._dataset) * 0.4)
+            eval_dataset = val_set._dataset[0:eval_part]
+            eval_dataset = mx.gluon.data.ArrayDataset(eval_dataset[0], eval_dataset[1])
+            val_dataset = val_set._dataset[eval_part:]
+            val_dataset = mx.gluon.data.ArrayDataset(val_dataset[0], val_dataset[1])
+
             self.train_data = train_set
             self.val_data = val_set
+            self.eval_data = val_set
+
+            self.val_data._dataset = val_dataset
+            self.eval_data._dataset = eval_dataset
         elif isinstance(train_set, mx.io.io.MXDataIter):
+            print('!!! GOT MXDATAITER; INVALID !!!')
+            exit(2)
             self.train_data = train_set
             self.val_data = val_set
         else:
+            print('!!! GOT ???; INVALID !!!')
+            exit(3)
             self.train_data = train_set
             self.val_data = val_set
         iters_per_epoch = len(self.train_data) if hasattr(self.train_data, '__len__') else \
