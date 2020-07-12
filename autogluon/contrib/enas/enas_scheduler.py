@@ -222,9 +222,7 @@ class ENAS_Scheduler(object):
         self.training_history.append(reward)
 
     def evaluation(self, epoch):
-        if hasattr(self.eval_data, 'reset'):
-            self.eval_data.reset()
-            print('Reset evaluation data.')
+        if hasattr(self.eval_data, 'reset'): self.eval_data.reset()
         # data iter, avoid memory leak
         it = iter(self.eval_data)
         if hasattr(it, 'reset_sample_times'): it.reset_sample_times()
