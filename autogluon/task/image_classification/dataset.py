@@ -593,13 +593,14 @@ def get_built_in_dataset(name, train=True, input_size=224, batch_size=256, num_w
 
         return gluon.data.vision.FashionMNIST(train=train, transform=transform)
     elif name == 'imagenet':
+        print("Loading the imagenet from ~/.mxnet/imagenet/")
         # Please setup the ImageNet dataset following the tutorial from GluonCV
         if train:
-            rec_file = '/media/ramdisk/rec/train.rec'
-            rec_file_idx = '/media/ramdisk/rec/train.idx'
+            rec_file = '~/.mxnet/imagenet/train.rec'
+            rec_file_idx = '~/.mxnet/imagenet/train.idx'
         else:
-            rec_file = '/media/ramdisk/rec/val.rec'
-            rec_file_idx = '/media/ramdisk/rec/val.idx'
+            rec_file = '~/.mxnet/imagenet/val.rec'
+            rec_file_idx = '~/.mxnet/imagenet/val.idx'
         data_loader = get_data_rec(input_size, 0.875, rec_file, rec_file_idx,
                                    batch_size, num_workers, train, shuffle=shuffle,
                                    **kwargs)
