@@ -24,7 +24,7 @@ class ENAS_Scheduler(object):
     """
     def __init__(self, supernet, train_set='imagenet', val_set=None,
                  train_fn=default_train_fn, eval_fn=default_val_fn, post_epoch_fn=None,
-                 post_epoch_eval=None, train_args={}, val_args={}, reward_fn=default_reward_fn,
+                 train_args={}, val_args={}, reward_fn=default_reward_fn,
                  num_gpus=0, num_cpus=4,
                  batch_size=256, epochs=120, warmup_epochs=5,
                  controller_lr=1e-3, controller_type='lstm',
@@ -45,7 +45,6 @@ class ENAS_Scheduler(object):
         self.eval_fn = eval_fn
         self.reward_fn = reward_fn
         self.post_epoch_fn = post_epoch_fn
-        self.post_epoch_eval = post_epoch_eval
         self.checkname = checkname
         self.plot_frequency = plot_frequency
         self.epochs = epochs
@@ -92,6 +91,25 @@ class ENAS_Scheduler(object):
         self.supernet.hybridize()
         dataset_name = train_set
 
+        def split_val_data(val_dataset, split_pct=0.4):
+            eval_part = round(len(val_dataset) * split_pct)
+            print('The first {}% of the validation dataset will be held back for evaluation instead.'.format(split_pct*100))
+            eval_dataset = tuple([[], []])
+            new_val_dataset = tuple([[], []])
+            for i in range(eval_part):
+                eval_dataset[0].append(val_dataset[i][0])
+                eval_dataset[1].append(val_dataset[i][1])
+            for i in range(eval_part, len(val_dataset)):
+                new_val_dataset[0].append(val_dataset[i][0])
+                new_val_dataset[1].append(val_dataset[i][1])
+
+            eval_dataset = mx.gluon.data.ArrayDataset(eval_dataset[0], eval_dataset[1])
+            new_val_dataset = mx.gluon.data.ArrayDataset(new_val_dataset[0], new_val_dataset[1])
+
+            return new_val_dataset, eval_dataset
+
+
+
         if isinstance(train_set, str):
             train_set = get_built_in_dataset(dataset_name, train=True, batch_size=batch_size,
                                              num_workers=num_cpus, shuffle=True)
@@ -99,28 +117,20 @@ class ENAS_Scheduler(object):
                                            num_workers=num_cpus, shuffle=True)
         if isinstance(train_set, gluon.data.Dataset):
             # split the validation set into an evaluation and validation set
-            eval_part = round(len(val_set) * 0.4)
-            eval_set = val_set[0:eval_part]
-            eval_set = mx.gluon.data.ArrayDataset(eval_set[0], eval_set[1])
-            val_set = val_set[eval_part:]
-            val_set = mx.gluon.data.ArrayDataset(val_set[0], val_set[1])
+            val_dataset, eval_dataset = split_val_data(val_set)
 
             self.train_data = DataLoader(
                     train_set, batch_size=batch_size, shuffle=True,
                     last_batch="discard", num_workers=num_cpus)
             # very important, make shuffle for training contoller
             self.val_data = DataLoader(
-                    val_set, batch_size=batch_size, shuffle=True,
+                    val_dataset, batch_size=batch_size, shuffle=True,
                     num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
             self.eval_data = DataLoader(
-                    eval_set, batch_size=batch_size, shuffle=True,
+                    eval_dataset, batch_size=batch_size, shuffle=True,
                     num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
         elif isinstance(train_set, gluon.data.dataloader.DataLoader):
-            eval_part = round(len(val_set._dataset) * 0.4)
-            eval_dataset = val_set._dataset[0:eval_part]
-            eval_dataset = mx.gluon.data.ArrayDataset(eval_dataset[0], eval_dataset[1])
-            val_dataset = val_set._dataset[eval_part:]
-            val_dataset = mx.gluon.data.ArrayDataset(val_dataset[0], val_dataset[1])
+            val_dataset, eval_dataset = split_val_data(val_set._dataset)
 
             self.train_data = train_set
             self.val_data = val_set
@@ -138,6 +148,9 @@ class ENAS_Scheduler(object):
             exit(3)
             self.train_data = train_set
             self.val_data = val_set
+
+        assert self.eval_data is not None
+
         iters_per_epoch = len(self.train_data) if hasattr(self.train_data, '__len__') else \
                 IMAGENET_TRAINING_SAMPLES // batch_size
         self.train_args = init_default_train_args(batch_size, self.supernet, self.epochs, iters_per_epoch) \
