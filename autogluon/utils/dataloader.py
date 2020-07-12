@@ -252,6 +252,13 @@ class DataLoader(object):
         else:
             self._batchify_fn = batchify_fn
 
+    @staticmethod
+    def from_other_with_dataset(other: DataLoader, dataset):
+        return DataLoader(dataset, batch_sampler=other._batch_sampler, batchify_fn=other._batchify_fn,
+                          num_workers=other._num_workers, pin_memory=other._pin_memory,
+                          pin_device_id=other._pin_device_id, prefetch=other._prefetch, thread_pool=other._thread_pool,
+                          timeout=other._timeout, sample_times=other._sample_times)
+
     def __iter__(self):
         if self._num_workers == 0:
             def same_process_iter():

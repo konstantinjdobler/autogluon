@@ -136,11 +136,8 @@ class ENAS_Scheduler(object):
             val_dataset, eval_dataset = split_val_data(val_set._dataset)
 
             self.train_data = train_set
-            self.val_data = val_set
-            self.eval_data = val_set
-
-            self.val_data._dataset = val_dataset
-            self.eval_data._dataset = eval_dataset
+            self.val_data = DataLoader.from_other_with_dataset(val_set, val_dataset)
+            self.eval_data = DataLoader.from_other_with_dataset(val_set, eval_dataset)
         elif isinstance(train_set, mx.io.io.MXDataIter):
             print('!!! GOT MXDATAITER; INVALID !!!')
             exit(2)
