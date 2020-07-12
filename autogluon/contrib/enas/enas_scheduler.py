@@ -239,7 +239,7 @@ class ENAS_Scheduler(object):
         for batch in tbar:
             self.eval_fn(self.supernet, batch, metric=metric, **self.val_args)
             reward = metric.get()[1]
-            tbar.set_description('Eval Acc: {}'.format(epoch, reward))
+            tbar.set_description('Eval Acc: {}'.format(reward))
 
         self.eval_acc = reward
 
