@@ -24,7 +24,7 @@ class ENAS_Scheduler(object):
     """
     def __init__(self, supernet, train_set='imagenet', val_set=None,
                  train_fn=default_train_fn, eval_fn=default_val_fn, post_epoch_fn=None, post_epoch_save=None,
-                 train_args={}, val_args={}, reward_fn=default_reward_fn,
+                 eval_split_pct=0.5, train_args={}, val_args={}, reward_fn=default_reward_fn,
                  num_gpus=0, num_cpus=4,
                  batch_size=256, epochs=120, warmup_epochs=5,
                  controller_lr=1e-3, controller_type='lstm',
@@ -46,6 +46,7 @@ class ENAS_Scheduler(object):
         self.reward_fn = reward_fn
         self.post_epoch_fn = post_epoch_fn
         self.post_epoch_save = post_epoch_save
+        self.eval_split_pct = eval_split_pct
         self.checkname = checkname
         self.plot_frequency = plot_frequency
         self.epochs = epochs
@@ -69,6 +70,7 @@ class ENAS_Scheduler(object):
                 optimizer_params={'learning_rate': controller_lr})
         self.update_arch_frequency = update_arch_frequency
         self.val_acc = 0
+        self.eval_acc = 0
         # async controller sample
         self._worker_pool = ThreadPool(2)
         self._data_buffer = {}
@@ -92,9 +94,9 @@ class ENAS_Scheduler(object):
         self.supernet.hybridize()
         dataset_name = train_set
 
-        def split_val_data(val_dataset, split_pct=0.4):
-            eval_part = round(len(val_dataset) * split_pct)
-            print('The first {}% of the validation dataset will be held back for evaluation instead.'.format(split_pct*100))
+        def split_val_data(val_dataset):
+            eval_part = round(len(val_dataset) * self.eval_split_pct)
+            print('The first {}% of the validation dataset will be held back for evaluation instead.'.format(self.eval_split_pct*100))
             eval_dataset = tuple([[], []])
             new_val_dataset = tuple([[], []])
             for i in range(eval_part):
@@ -199,7 +201,7 @@ class ENAS_Scheduler(object):
             if self.post_epoch_save:
                 self.post_epoch_save(self.supernet, epoch)
             self.save()
-            msg = 'epoch {}, val_acc: {:.2f}'.format(epoch, self.val_acc)
+            msg = 'epoch {}, val_acc: {:.2f}, eval_acc: {:.2f}'.format(epoch, self.val_acc, self.eval_acc)
             if self.baseline:
                 msg += ', avg reward: {:.2f}'.format(self.baseline)
             tq.set_description(msg)
@@ -223,7 +225,9 @@ class ENAS_Scheduler(object):
         self.training_history.append(reward)
 
     def evaluation(self, epoch):
-        if hasattr(self.eval_data, 'reset'): self.eval_data.reset()
+        if hasattr(self.eval_data, 'reset'):
+            self.eval_data.reset()
+            print('Reset evaluation data.')
         # data iter, avoid memory leak
         it = iter(self.eval_data)
         if hasattr(it, 'reset_sample_times'): it.reset_sample_times()
@@ -235,7 +239,9 @@ class ENAS_Scheduler(object):
         for batch in tbar:
             self.eval_fn(self.supernet, batch, metric=metric, **self.val_args)
             reward = metric.get()[1]
-            tbar.set_description('Epoch {} Evaluation Acc: {}'.format(epoch, reward))
+            tbar.set_description('Eval Acc: {}'.format(epoch, reward))
+
+        self.eval_acc = reward
 
     def _sample_controller(self):
         assert self._rcvd_idx < self._sent_idx, "rcvd_idx must be smaller than sent_idx"
