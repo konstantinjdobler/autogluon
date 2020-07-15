@@ -111,8 +111,6 @@ class ENAS_Scheduler(object):
 
             return new_val_dataset, eval_dataset
 
-
-
         if isinstance(train_set, str):
             train_set = get_built_in_dataset(dataset_name, train=True, batch_size=batch_size,
                                              num_workers=num_cpus, shuffle=True)
@@ -120,7 +118,10 @@ class ENAS_Scheduler(object):
                                            num_workers=num_cpus, shuffle=True)
         if isinstance(train_set, gluon.data.Dataset):
             # split the validation set into an evaluation and validation set
-            val_dataset, eval_dataset = split_val_data(val_set)
+            if self.eval_split_pct != 0:
+                val_dataset, eval_dataset = split_val_data(val_set)
+            else:
+                val_dataset = val_set
 
             self.train_data = DataLoader(
                     train_set, batch_size=batch_size, shuffle=True,
@@ -129,15 +130,20 @@ class ENAS_Scheduler(object):
             self.val_data = DataLoader(
                     val_dataset, batch_size=batch_size, shuffle=True,
                     num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
-            self.eval_data = DataLoader(
-                    eval_dataset, batch_size=batch_size, shuffle=True,
-                    num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
+            if self.eval_split_pct != 0:
+                self.eval_data = DataLoader(
+                        eval_dataset, batch_size=batch_size, shuffle=True,
+                        num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
         elif isinstance(train_set, gluon.data.dataloader.DataLoader):
-            val_dataset, eval_dataset = split_val_data(val_set._dataset)
+            if self.eval_split_pct != 0:
+                val_dataset, eval_dataset = split_val_data(val_set._dataset)
 
             self.train_data = train_set
-            self.val_data = DataLoader.from_other_with_dataset(val_set, val_dataset)
-            self.eval_data = DataLoader.from_other_with_dataset(val_set, eval_dataset)
+            if self.eval_split_pct != 0:
+                self.val_data = DataLoader.from_other_with_dataset(val_set, val_dataset)
+                self.eval_data = DataLoader.from_other_with_dataset(val_set, eval_dataset)
+            else:
+                self.val_data = val_set
         elif isinstance(train_set, mx.io.io.MXDataIter):
             print('!!! GOT MXDATAITER; INVALID !!!')
             exit(2)
@@ -149,7 +155,8 @@ class ENAS_Scheduler(object):
             self.train_data = train_set
             self.val_data = val_set
 
-        assert self.eval_data is not None
+        if self.eval_split_pct != 0:
+            assert self.eval_data is not None
 
         iters_per_epoch = len(self.train_data) if hasattr(self.train_data, '__len__') else \
                 IMAGENET_TRAINING_SAMPLES // batch_size
@@ -192,7 +199,7 @@ class ENAS_Scheduler(object):
                     tbar.set_description('avg reward: {:.2f}'.format(self.baseline))
                 idx += 1
             self.validation()
-            self.evaluation(epoch)
+            self.evaluation()
             if self.post_epoch_fn:
                 self.post_epoch_fn(self.supernet, epoch)
             if self.post_epoch_save:
@@ -221,7 +228,10 @@ class ENAS_Scheduler(object):
         self.val_acc = reward
         self.training_history.append(reward)
 
-    def evaluation(self, epoch):
+    def evaluation(self):
+        if self.eval_split_pct == 0:
+            self.eval_acc = 0
+            return
         if hasattr(self.eval_data, 'reset'): self.eval_data.reset()
         # data iter, avoid memory leak
         it = iter(self.eval_data)
