@@ -134,7 +134,7 @@ class ENAS_Scheduler(object):
                 self.eval_data = DataLoader(
                         eval_dataset, batch_size=batch_size, shuffle=True,
                         num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
-        elif isinstance(train_set, gluon.data.dataloader.DataLoader):
+        elif isinstance(train_set, gluon.data.dataloader.DataLoader) or isinstance(train_set, DataLoader):
             if self.eval_split_pct != 0:
                 val_dataset, eval_dataset = split_val_data(val_set._dataset)
 
