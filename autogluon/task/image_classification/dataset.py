@@ -539,7 +539,7 @@ class ImageFolderDataset(object):
 
 
 def get_built_in_dataset(name, train=True, input_size=224, batch_size=256, num_workers=32,
-                         shuffle=True, **kwargs):
+                         shuffle=True, fine_label=False, **kwargs):
     """Returns built-in popular image classification dataset based on provided string name ('cifar10', 'cifar100','mnist','imagenet').
     """
     logger.info(f'get_built_in_dataset {name}')
@@ -581,7 +581,7 @@ def get_built_in_dataset(name, train=True, input_size=224, batch_size=256, num_w
                     transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
                 ]
             )
-        return gluon.data.vision.CIFAR100(train=train).transform_first(transform_split)
+        return gluon.data.vision.CIFAR100(train=train, fine_label=fine_label).transform_first(transform_split)
     elif name == 'mnist':
         def transform(data, label):
             return nd.transpose(data.astype(np.float32), (2, 0, 1)) / 255, label.astype(np.float32)

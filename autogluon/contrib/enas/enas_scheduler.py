@@ -113,9 +113,9 @@ class ENAS_Scheduler(object):
 
         if isinstance(train_set, str):
             train_set = get_built_in_dataset(dataset_name, train=True, batch_size=batch_size,
-                                             num_workers=num_cpus, shuffle=True)
+                                             num_workers=num_cpus, shuffle=True, fine_label=True)
             val_set = get_built_in_dataset(dataset_name, train=False, batch_size=batch_size,
-                                           num_workers=num_cpus, shuffle=True)
+                                           num_workers=num_cpus, shuffle=True, fine_label=True)
         if isinstance(train_set, gluon.data.Dataset):
             # split the validation set into an evaluation and validation set
             if self.eval_split_pct != 0:
