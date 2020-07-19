@@ -6,6 +6,7 @@ from multiprocessing.pool import ThreadPool
 import math
 
 from mxboard import *
+import numpy as np
 
 from ...searcher import RLSearcher
 from ...scheduler.resource import get_gpu_count, get_cpu_count
@@ -56,7 +57,10 @@ class ENAS_Scheduler(object):
         self.warmup_epochs = warmup_epochs
         self.controller_batch_size = controller_batch_size
         self.tensorboard_log_dir = tensorboard_log_dir
-        self.summary_writer = SummaryWriter(logdir=self.tensorboard_log_dir + '/' + training_name, flush_secs=5)
+        self.summary_writer = SummaryWriter(logdir=self.tensorboard_log_dir + '/' + training_name, flush_secs=5,
+                                            verbose=False)
+        self.config_images = {}
+
         kwspaces = self.supernet.kwspaces
 
         self.initialize_miscs(train_set, val_set, batch_size, num_cpus, num_gpus,
@@ -183,23 +187,49 @@ class ENAS_Scheduler(object):
             self.train_args['batch_fn'] = custom_batch_fn
         self.ctx = ctx
 
+    def _visualize_config_in_tensorboard(self, config_np_array, tag, global_step, window_size=80):
+        if tag not in self.config_images:
+            self.config_images[tag] = np.zeros((len(config_np_array), window_size))
+        img = np.zeros((len(config_np_array), window_size))
+        img[:,0:window_size-1] =  self.config_images[tag][:, 1:window_size]
+        img[:,window_size-1] = config_np_array
+        self.summary_writer.add_image(tag = tag, image=img, global_step=global_step)
+        self.config_images[tag] = img
+
+
     def run(self):
         tq = tqdm(range(self.epochs))
+        self.controller_train_iteration = 0
         for epoch in tq:
             # for recordio data
             if hasattr(self.train_data, 'reset'): self.train_data.reset()
             tbar = tqdm(self.train_data)
             idx = 0
             train_metric = mx.metric.Accuracy()
+            epoch_average_config = np.zeros(len(self.supernet.kwspaces))
+            step_average_config = np.zeros(len(self.supernet.kwspaces))
+            config_counter = 0
+            self.batch_counter = 0
             for batch in tbar:
                 # sample network configuration
                 config = self.controller.pre_sample()[0]
+                config_array = np.array([v for v in config.values()])
+                epoch_average_config += config_array
+                step_average_config += config_array
+                config_counter += 1
+                self.batch_counter += 1
                 self.supernet.sample(**config)
                 # self.train_fn(self.supernet, batch, **self.train_args)
                 self.train_fn(epoch, self.epochs, self.supernet, batch, metric=train_metric, **self.train_args)
                 mx.nd.waitall()
                 if epoch >= self.warmup_epochs and (idx % self.update_arch_frequency) == 0:
+                    step_average_config /= config_counter
+                    config_counter = 0
+                    self._visualize_config_in_tensorboard(step_average_config, "step_config_average",
+                                                          self.controller_train_iteration)
+                    step_average_config = np.zeros(len(self.supernet.kwspaces))
                     self.train_controller()
+                    self.controller_train_iteration += 1
                 if self.plot_frequency > 0 and idx % self.plot_frequency == 0 and in_ipynb():
                     graph = self.supernet.graph
                     graph.attr(rankdir='LR', size='8,3')
@@ -207,7 +237,7 @@ class ENAS_Scheduler(object):
                 if self.baseline:
                     tbar.set_description('avg reward: {:.2f}, train acc: {:.2f}'.format(self.baseline, train_metric.get()[1]))
                 idx += 1
-            self.validation()
+            self.validation(epoch)
             self.evaluation()
             if self.post_epoch_fn:
                 self.post_epoch_fn(self.supernet, epoch)
@@ -220,12 +250,16 @@ class ENAS_Scheduler(object):
             self.summary_writer.add_scalar(tag='validation_accuracy', value=self.val_acc, global_step=epoch)
             self.summary_writer.add_scalar(tag='evaluation_accuracy', value=self.eval_acc, global_step=epoch)
             self.summary_writer.add_scalar(tag='avg_reward', value=self.baseline, global_step=epoch)
+            epoch_average_config = epoch_average_config / len(tbar)
+            self._visualize_config_in_tensorboard(epoch_average_config, "train_epoch_average_config", epoch)
+            self._visualize_config_in_tensorboard(config_array, "train_epoch_last_config", epoch)
+            print("average train config: " + str([f'{v:.2f}' for v in epoch_average_config]))
             self.summary_writer.flush()
             if self.baseline:
                 msg += ', avg reward: {:.4f}'.format(self.baseline)
             tq.set_description(msg)
 
-    def validation(self):
+    def validation(self, epoch):
         if hasattr(self.val_data, 'reset'): self.val_data.reset()
         # data iter, avoid memory leak
         it = iter(self.val_data)
@@ -233,6 +267,8 @@ class ENAS_Scheduler(object):
         tbar = tqdm(it)
         # update network arc
         config = self.controller.inference()
+        print('val_config:' + str([v for v in config.values()]))
+        self._visualize_config_in_tensorboard(np.array([v for v in config.values()]), "validation_config", epoch)
         self.supernet.sample(**config)
         metric = mx.metric.Accuracy()
         for batch in tbar:
@@ -295,8 +331,10 @@ class ENAS_Scheduler(object):
         with mx.autograd.record():
             # sample controller_batch_size number of configurations
             configs, log_probs, entropies = self._sample_controller()
+            average_config = np.zeros(len(self.supernet.kwspaces))
             for i, batch in enumerate(self.val_data):
                 if i >= self.controller_batch_size: break
+                average_config += np.array([v for v in configs[i].values()])
                 self.supernet.sample(**configs[i])
                 # schedule the training tasks and gather the reward
                 metric.reset()
@@ -319,6 +357,9 @@ class ENAS_Scheduler(object):
         loss.backward()
         self.controller_optimizer.step(self.controller_batch_size)
         self._prefetch_controller()
+        average_config = average_config/self.controller_batch_size
+        self._visualize_config_in_tensorboard(average_config, "controller_train_config",
+                                              self.controller_train_iteration)
 
     def load(self, checkname=None):
         checkname = checkname if checkname else self.checkname
