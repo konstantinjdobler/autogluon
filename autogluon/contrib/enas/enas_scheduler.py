@@ -3,8 +3,9 @@ import pickle
 import logging
 from collections import OrderedDict
 from multiprocessing.pool import ThreadPool
+import math
 
-import mxnet as mx
+from mxboard import *
 
 from ...searcher import RLSearcher
 from ...scheduler.resource import get_gpu_count, get_cpu_count
@@ -32,7 +33,9 @@ class ENAS_Scheduler(object):
                  update_arch_frequency=20, checkname='./enas/checkpoint.ag',
                  plot_frequency=0,
                  custom_batch_fn = None,
+                 tensorboard_log_dir=None, training_name='enas_training',
                  **kwargs):
+
         num_cpus = get_cpu_count() if num_cpus > get_cpu_count() else num_cpus
         if (type(num_gpus) == tuple) or (type(num_gpus) == list):
             for gpu in num_gpus:
@@ -52,6 +55,8 @@ class ENAS_Scheduler(object):
         self.epochs = epochs
         self.warmup_epochs = warmup_epochs
         self.controller_batch_size = controller_batch_size
+        self.tensorboard_log_dir = tensorboard_log_dir
+        self.summary_writer = SummaryWriter(logdir=self.tensorboard_log_dir + '/' + training_name, flush_secs=5)
         kwspaces = self.supernet.kwspaces
 
         self.initialize_miscs(train_set, val_set, batch_size, num_cpus, num_gpus,
@@ -80,6 +85,9 @@ class ENAS_Scheduler(object):
         # logging history
         self.training_history = []
         self._prefetch_controller()
+
+    def __del__(self):
+        self.summary_writer.close()
 
     def initialize_miscs(self, train_set, val_set, batch_size, num_cpus, num_gpus,
                          train_args, val_args, custom_batch_fn=None):
@@ -182,12 +190,13 @@ class ENAS_Scheduler(object):
             if hasattr(self.train_data, 'reset'): self.train_data.reset()
             tbar = tqdm(self.train_data)
             idx = 0
+            train_metric = mx.metric.Accuracy()
             for batch in tbar:
                 # sample network configuration
                 config = self.controller.pre_sample()[0]
                 self.supernet.sample(**config)
                 # self.train_fn(self.supernet, batch, **self.train_args)
-                self.train_fn(epoch, self.epochs, self.supernet, batch, **self.train_args)
+                self.train_fn(epoch, self.epochs, self.supernet, batch, metric=train_metric, **self.train_args)
                 mx.nd.waitall()
                 if epoch >= self.warmup_epochs and (idx % self.update_arch_frequency) == 0:
                     self.train_controller()
@@ -196,7 +205,7 @@ class ENAS_Scheduler(object):
                     graph.attr(rankdir='LR', size='8,3')
                     tbar.set_svg(graph._repr_svg_())
                 if self.baseline:
-                    tbar.set_description('avg reward: {:.2f}'.format(self.baseline))
+                    tbar.set_description('avg reward: {:.2f}, train acc: {:.2f}'.format(self.baseline, train_metric.get()[1]))
                 idx += 1
             self.validation()
             self.evaluation()
@@ -205,7 +214,13 @@ class ENAS_Scheduler(object):
             if self.post_epoch_save:
                 self.post_epoch_save(self.supernet, epoch)
             self.save()
-            msg = 'epoch {}, val_acc: {:.4f}, eval_acc: {:.4f}'.format(epoch, self.val_acc, self.eval_acc)
+            acc = train_metric.get()[1] if train_metric.get()[1] is not math.isnan(train_metric.get()[1]) else 0
+            msg = 'epoch {}, train_acc: {:.4f}, val_acc: {:.4f}, eval_acc: {:.4f}'.format(epoch, acc, self.val_acc,
+                                                                                          self.eval_acc)
+            self.summary_writer.add_scalar(tag='validation_accuracy', value=self.val_acc, global_step=epoch)
+            self.summary_writer.add_scalar(tag='evaluation_accuracy', value=self.eval_acc, global_step=epoch)
+            self.summary_writer.add_scalar(tag='avg_reward', value=self.baseline, global_step=epoch)
+            self.summary_writer.flush()
             if self.baseline:
                 msg += ', avg reward: {:.4f}'.format(self.baseline)
             tq.set_description(msg)
