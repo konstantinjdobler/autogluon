@@ -244,9 +244,10 @@ class ENAS_Scheduler(object):
             if self.post_epoch_save:
                 self.post_epoch_save(self.supernet, epoch)
             self.save()
-            acc = train_metric.get()[1] if train_metric.get()[1] is not math.isnan(train_metric.get()[1]) else 0
-            msg = 'epoch {}, train_acc: {:.4f}, val_acc: {:.4f}, eval_acc: {:.4f}'.format(epoch, acc, self.val_acc,
-                                                                                          self.eval_acc)
+            train_acc = train_metric.get()[1] if train_metric.get()[1] is not math.isnan(train_metric.get()[1]) else 0
+            msg = 'epoch {}, train_acc:{:.4f}, val_acc:{:.4f}, eval_acc:{:.4f}'.format(epoch, train_acc, self.val_acc,
+                                                                                       self.eval_acc)
+            self.summary_writer.add_scalar(tag='training_accuracy', value=train_acc, global_step=epoch)
             self.summary_writer.add_scalar(tag='validation_accuracy', value=self.val_acc, global_step=epoch)
             self.summary_writer.add_scalar(tag='evaluation_accuracy', value=self.eval_acc, global_step=epoch)
             self.summary_writer.add_scalar(tag='avg_reward', value=self.baseline, global_step=epoch)
