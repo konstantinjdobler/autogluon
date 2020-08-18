@@ -4,7 +4,10 @@ import logging
 from collections import OrderedDict
 from multiprocessing.pool import ThreadPool
 
+from mxboard import *
+import mxnet.gluon.nn as nn
 import mxnet as mx
+import numpy as np
 
 from ...searcher import RLSearcher
 from ...scheduler.resource import get_gpu_count, get_cpu_count
@@ -22,16 +25,18 @@ IMAGENET_TRAINING_SAMPLES = 1281167
 class ENAS_Scheduler(object):
     """ENAS Scheduler, which automatically creates LSTM controller based on the search spaces.
     """
+
     def __init__(self, supernet, train_set='imagenet', val_set=None,
                  train_fn=default_train_fn, eval_fn=default_val_fn, post_epoch_fn=None, post_epoch_save=None,
-                 train_args={}, val_args={}, reward_fn=default_reward_fn,
+                 eval_split_pct=0.5, train_args={}, val_args={}, reward_fn=default_reward_fn,
                  num_gpus=0, num_cpus=4,
                  batch_size=256, epochs=120, warmup_epochs=5,
                  controller_lr=1e-3, controller_type='lstm',
                  controller_batch_size=10, ema_baseline_decay=0.95,
                  update_arch_frequency=20, checkname='./enas/checkpoint.ag',
                  plot_frequency=0,
-                 custom_batch_fn = None,
+                 custom_batch_fn=None,
+                 tensorboard_log_dir=None, training_name='enas_training',
                  **kwargs):
         num_cpus = get_cpu_count() if num_cpus > get_cpu_count() else num_cpus
         if (type(num_gpus) == tuple) or (type(num_gpus) == list):
@@ -51,6 +56,7 @@ class ENAS_Scheduler(object):
         self.epochs = epochs
         self.warmup_epochs = warmup_epochs
         self.controller_batch_size = controller_batch_size
+
         kwspaces = self.supernet.kwspaces
 
         self.initialize_miscs(train_set, val_set, batch_size, num_cpus, num_gpus,
@@ -78,6 +84,11 @@ class ENAS_Scheduler(object):
         # logging history
         self.training_history = []
         self._prefetch_controller()
+        #tensorboard logging
+        self.tensorboard_log_dir = tensorboard_log_dir
+        self.summary_writer = SummaryWriter(logdir=self.tensorboard_log_dir + '/' + training_name, flush_secs=5, verbose=False)
+        self.config_images = {}
+        self.tensorboard_writing_thread_pool = ThreadPool(2)
 
     def initialize_miscs(self, train_set, val_set, batch_size, num_cpus, num_gpus,
                          train_args, val_args, custom_batch_fn=None):
@@ -89,7 +100,7 @@ class ENAS_Scheduler(object):
         else:
             ctx = [mx.gpu(i) for i in range(num_gpus)] if num_gpus > 0 else [mx.cpu(0)]
         self.supernet.collect_params().reset_ctx(ctx)
-        self.supernet.hybridize()
+        #self.supernet.hybridize()
         dataset_name = train_set
 
         if isinstance(train_set, str):
@@ -130,6 +141,17 @@ class ENAS_Scheduler(object):
         else:
             self.train_args['batch_fn'] = custom_batch_fn
         self.ctx = ctx
+
+    def _visualize_config_in_tensorboard(self, config_np_array, tag, global_step, window_size=80):
+        if tag not in self.config_images:
+            self.config_images[tag] = np.zeros((len(config_np_array), window_size))
+        img = np.zeros((len(config_np_array), window_size))
+        img[:,0:window_size-1] =  self.config_images[tag][:, 1:window_size]
+        img[:,window_size-1] = config_np_array
+        self.config_images[tag] = img
+        self.tensorboard_writing_thread_pool.apply_async(self.summary_writer.add_image,
+                                                         kwds={"tag":tag, "image":img, "global_step":global_step})
+
 
     def run(self):
         tq = tqdm(range(self.epochs))
@@ -174,6 +196,13 @@ class ENAS_Scheduler(object):
         # update network arc
         config = self.controller.inference()
         self.supernet.sample(**config)
+
+        #hybnet = nn.HybridSequential()
+        #for layer in self.supernet.prune():
+        #    hybnet.add(layer)
+        #hybnet.hybridize()
+        #hybnet(self.val_data)
+
         metric = mx.metric.Accuracy()
         for batch in tbar:
             self.eval_fn(self.supernet, batch, metric=metric, **self.val_args)
