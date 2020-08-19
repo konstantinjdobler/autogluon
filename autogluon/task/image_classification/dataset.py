@@ -539,7 +539,7 @@ class ImageFolderDataset(object):
 
 
 def get_built_in_dataset(name, train=True, input_size=224, batch_size=256, num_workers=32,
-                         shuffle=True, **kwargs):
+                         shuffle=True, fine_label=False, **kwargs):
     """Returns built-in popular image classification dataset based on provided string name ('cifar10', 'cifar100','mnist','imagenet').
     """
     logger.info(f'get_built_in_dataset {name}')
@@ -581,7 +581,7 @@ def get_built_in_dataset(name, train=True, input_size=224, batch_size=256, num_w
                     transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
                 ]
             )
-        return gluon.data.vision.CIFAR100(train=train).transform_first(transform_split)
+        return gluon.data.vision.CIFAR100(train=train, fine_label=fine_label).transform_first(transform_split)
     elif name == 'mnist':
         def transform(data, label):
             return nd.transpose(data.astype(np.float32), (2, 0, 1)) / 255, label.astype(np.float32)
@@ -593,13 +593,14 @@ def get_built_in_dataset(name, train=True, input_size=224, batch_size=256, num_w
 
         return gluon.data.vision.FashionMNIST(train=train, transform=transform)
     elif name == 'imagenet':
+        print("Loading the imagenet from ~/.mxnet/imagenet/")
         # Please setup the ImageNet dataset following the tutorial from GluonCV
         if train:
-            rec_file = '/media/ramdisk/rec/train.rec'
-            rec_file_idx = '/media/ramdisk/rec/train.idx'
+            rec_file = '~/.mxnet/imagenet/train.rec'
+            rec_file_idx = '~/.mxnet/imagenet/train.idx'
         else:
-            rec_file = '/media/ramdisk/rec/val.rec'
-            rec_file_idx = '/media/ramdisk/rec/val.idx'
+            rec_file = '~/.mxnet/imagenet/val.rec'
+            rec_file_idx = '~/.mxnet/imagenet/val.idx'
         data_loader = get_data_rec(input_size, 0.875, rec_file, rec_file_idx,
                                    batch_size, num_workers, train, shuffle=shuffle,
                                    **kwargs)

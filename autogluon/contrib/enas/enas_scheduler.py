@@ -3,6 +3,7 @@ import pickle
 import logging
 from collections import OrderedDict
 from multiprocessing.pool import ThreadPool
+import math
 
 from mxboard import *
 import mxnet.gluon.nn as nn
@@ -35,9 +36,10 @@ class ENAS_Scheduler(object):
                  controller_batch_size=10, ema_baseline_decay=0.95,
                  update_arch_frequency=20, checkname='./enas/checkpoint.ag',
                  plot_frequency=0,
-                 custom_batch_fn=None,
+                 custom_batch_fn = None,
                  tensorboard_log_dir=None, training_name='enas_training',
                  **kwargs):
+
         num_cpus = get_cpu_count() if num_cpus > get_cpu_count() else num_cpus
         if (type(num_gpus) == tuple) or (type(num_gpus) == list):
             for gpu in num_gpus:
@@ -51,6 +53,7 @@ class ENAS_Scheduler(object):
         self.reward_fn = reward_fn
         self.post_epoch_fn = post_epoch_fn
         self.post_epoch_save = post_epoch_save
+        self.eval_split_pct = eval_split_pct
         self.checkname = checkname
         self.plot_frequency = plot_frequency
         self.epochs = epochs
@@ -75,6 +78,7 @@ class ENAS_Scheduler(object):
                 optimizer_params={'learning_rate': controller_lr})
         self.update_arch_frequency = update_arch_frequency
         self.val_acc = 0
+        self.eval_acc = 0
         # async controller sample
         self._worker_pool = ThreadPool(2)
         self._data_buffer = {}
@@ -90,6 +94,9 @@ class ENAS_Scheduler(object):
         self.config_images = {}
         self.tensorboard_writing_thread_pool = ThreadPool(2)
 
+    def __del__(self):
+        self.summary_writer.close()
+
     def initialize_miscs(self, train_set, val_set, batch_size, num_cpus, num_gpus,
                          train_args, val_args, custom_batch_fn=None):
         """Initialize framework related miscs, such as train/val data and train/val
@@ -103,28 +110,70 @@ class ENAS_Scheduler(object):
         #self.supernet.hybridize()
         dataset_name = train_set
 
+        def split_val_data(val_dataset):
+            eval_part = round(len(val_dataset) * self.eval_split_pct)
+            print('The first {}% of the validation dataset will be held back for evaluation instead.'.format(self.eval_split_pct*100))
+            eval_dataset = tuple([[], []])
+            new_val_dataset = tuple([[], []])
+            for i in range(eval_part):
+                eval_dataset[0].append(val_dataset[i][0])
+                eval_dataset[1].append(val_dataset[i][1])
+            for i in range(eval_part, len(val_dataset)):
+                new_val_dataset[0].append(val_dataset[i][0])
+                new_val_dataset[1].append(val_dataset[i][1])
+
+            eval_dataset = mx.gluon.data.ArrayDataset(eval_dataset[0], eval_dataset[1])
+            new_val_dataset = mx.gluon.data.ArrayDataset(new_val_dataset[0], new_val_dataset[1])
+
+            return new_val_dataset, eval_dataset
+
         if isinstance(train_set, str):
             train_set = get_built_in_dataset(dataset_name, train=True, batch_size=batch_size,
-                                             num_workers=num_cpus, shuffle=True)
+                                             num_workers=num_cpus, shuffle=True, fine_label=True)
             val_set = get_built_in_dataset(dataset_name, train=False, batch_size=batch_size,
-                                           num_workers=num_cpus, shuffle=True)
+                                           num_workers=num_cpus, shuffle=True, fine_label=True)
         if isinstance(train_set, gluon.data.Dataset):
+            # split the validation set into an evaluation and validation set
+            if self.eval_split_pct != 0:
+                val_dataset, eval_dataset = split_val_data(val_set)
+            else:
+                val_dataset = val_set
+
             self.train_data = DataLoader(
                     train_set, batch_size=batch_size, shuffle=True,
                     last_batch="discard", num_workers=num_cpus)
             # very important, make shuffle for training contoller
             self.val_data = DataLoader(
-                    val_set, batch_size=batch_size, shuffle=True,
+                    val_dataset, batch_size=batch_size, shuffle=True,
                     num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
-        elif isinstance(train_set, gluon.data.dataloader.DataLoader):
+            if self.eval_split_pct != 0:
+                self.eval_data = DataLoader(
+                        eval_dataset, batch_size=batch_size, shuffle=True,
+                        num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
+        elif isinstance(train_set, gluon.data.dataloader.DataLoader) or isinstance(train_set, DataLoader):
+            if self.eval_split_pct != 0:
+                val_dataset, eval_dataset = split_val_data(val_set._dataset)
+
             self.train_data = train_set
-            self.val_data = val_set
+            if self.eval_split_pct != 0:
+                self.val_data = DataLoader.from_other_with_dataset(val_set, val_dataset)
+                self.eval_data = DataLoader.from_other_with_dataset(val_set, eval_dataset)
+            else:
+                self.val_data = val_set
         elif isinstance(train_set, mx.io.io.MXDataIter):
+            print('!!! GOT MXDATAITER; INVALID !!!')
+            exit(2)
             self.train_data = train_set
             self.val_data = val_set
         else:
+            print('!!! GOT ???; INVALID !!!')
+            exit(3)
             self.train_data = train_set
             self.val_data = val_set
+
+        if self.eval_split_pct != 0:
+            assert self.eval_data is not None
+
         iters_per_epoch = len(self.train_data) if hasattr(self.train_data, '__len__') else \
                 IMAGENET_TRAINING_SAMPLES // batch_size
         self.train_args = init_default_train_args(batch_size, self.supernet, self.epochs, iters_per_epoch) \
@@ -216,7 +265,7 @@ class ENAS_Scheduler(object):
                 msg += ', avg reward: {:.4f}'.format(self.baseline)
             tq.set_description(msg)
 
-    def validation(self):
+    def validation(self, epoch):
         if hasattr(self.val_data, 'reset'): self.val_data.reset()
         # data iter, avoid memory leak
         it = iter(self.val_data)
@@ -242,6 +291,26 @@ class ENAS_Scheduler(object):
 
         self.val_acc = reward
         self.training_history.append(reward)
+
+    def evaluation(self):
+        if self.eval_split_pct == 0:
+            self.eval_acc = 0
+            return
+        if hasattr(self.eval_data, 'reset'): self.eval_data.reset()
+        # data iter, avoid memory leak
+        it = iter(self.eval_data)
+        if hasattr(it, 'reset_sample_times'): it.reset_sample_times()
+        tbar = tqdm(it)
+        # update network arc
+        config = self.controller.inference()
+        self.supernet.sample(**config)
+        metric = mx.metric.Accuracy()
+        for batch in tbar:
+            self.eval_fn(self.supernet, batch, metric=metric, **self.val_args)
+            reward = metric.get()[1]
+            tbar.set_description('Eval Acc: {}'.format(reward))
+
+        self.eval_acc = reward
 
     def _sample_controller(self):
         assert self._rcvd_idx < self._sent_idx, "rcvd_idx must be smaller than sent_idx"

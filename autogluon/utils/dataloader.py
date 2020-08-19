@@ -252,6 +252,15 @@ class DataLoader(object):
         else:
             self._batchify_fn = batchify_fn
 
+    @classmethod
+    def from_other_with_dataset(cls, other, dataset):
+        return cls(dataset, batch_size=other._batch_sampler._batch_size, last_batch=other._batch_sampler._last_batch,
+                   shuffle=isinstance(other._batch_sampler._sampler, _sampler.RandomSampler), batchify_fn=other._batchify_fn,
+                   num_workers=other._num_workers, pin_memory=other._pin_memory, pin_device_id=other._pin_device_id,
+                   prefetch=other._prefetch, thread_pool=other._thread_pool,
+                   timeout=other._timeout if hasattr(other, '_timeout') else 120,
+                   sample_times=other._sample_times if hasattr(other, '_sample_times') else None)
+
     def __iter__(self):
         if self._num_workers == 0:
             def same_process_iter():
