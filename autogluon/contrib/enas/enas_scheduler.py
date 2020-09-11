@@ -103,7 +103,7 @@ class ENAS_Scheduler(object):
         else:
             ctx = [mx.gpu(i) for i in range(num_gpus)] if num_gpus > 0 else [mx.cpu(0)]
         self.supernet.collect_params().reset_ctx(ctx)
-        self.supernet.hybridize()
+        # self.supernet.hybridize()
         dataset_name = train_set
 
         def split_val_data(val_dataset):

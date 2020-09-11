@@ -8,6 +8,7 @@ def default_reward_fn(metric, net):
     reward = metric * ((net.avg_latency / net.latency) ** 0.07)
     return reward
 
+
 def init_sgd_train_args(batch_size, net, epochs, iters_per_epoch):
     train_args = {}
     base_lr = 0.1 * batch_size / 256
