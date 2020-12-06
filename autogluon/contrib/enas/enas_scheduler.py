@@ -193,7 +193,8 @@ class ENAS_Scheduler(object):
         img = np.zeros((len(config_np_array), window_size))
         img[:,0:window_size-1] =  self.config_images[tag][:, 1:window_size]
 
-        config_np_array = config_np_array / len(config_np_array)
+        if np.max(config_np_array) > 1:
+            config_np_array = config_np_array / np.max(config_np_array)
 
         img[:,window_size-1] = config_np_array
         self.summary_writer.add_image(tag = tag, image=img, global_step=global_step)
