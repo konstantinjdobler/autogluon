@@ -270,7 +270,8 @@ class ENAS_Sequential(gluon.HybridBlock):
             else:
                 # standard block
                 for _, v in op.collect_params().items():
-                    nparams += v.data().size
+                    # MIDL was causing error with default ctx
+                    nparams += v.data(ctx=mx.gpu()).size
         return nparams
 
     @property
@@ -350,7 +351,8 @@ class ENAS_Unit(gluon.HybridBlock):
     def nparams(self):
         nparams = 0
         for _, v in self.module_list[self.index].collect_params().items():
-            nparams += v.data().size
+            # MIDL was causing error with default ctx
+            nparams += v.data(ctx=mx.gpu()).size
         return nparams
 
     @property
