@@ -342,6 +342,7 @@ class ENAS_Scheduler(object):
             # sample controller_batch_size number of configurations
             configs, log_probs, entropies = self._sample_controller()
             average_config = np.zeros(len(self.supernet.kwspaces))
+            print(configs)
             for i, batch in enumerate(self.val_data):
                 if i >= self.controller_batch_size: break
                 average_config += np.array([v for v in configs[i].values()])
