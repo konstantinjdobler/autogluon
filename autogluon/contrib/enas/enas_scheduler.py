@@ -221,7 +221,8 @@ class ENAS_Scheduler(object):
             self.batch_counter = 0
             for batch in tbar:
                 # sample network configuration
-                config = self.controller.pre_sample()[0]
+                # ASYNC FASHION: self.controller.pre_sample()[0]
+                config = self.controller.sample()[0]
                 config_array = np.array([v for v in config.values()])
                 epoch_average_config += config_array
                 step_average_config += config_array
@@ -340,7 +341,8 @@ class ENAS_Scheduler(object):
         metric = mx.metric.Accuracy()
         with mx.autograd.record():
             # sample controller_batch_size number of configurations
-            configs, log_probs, entropies = self._sample_controller()
+            # ASYNC FASHION: self._sample_controller()
+            configs, log_probs, entropies = self._async_sample()
             average_config = np.zeros(len(self.supernet.kwspaces))
             for i, batch in enumerate(self.val_data):
                 if i >= self.controller_batch_size: break
