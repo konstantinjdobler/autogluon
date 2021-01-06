@@ -291,7 +291,7 @@ class ENAS_Sequential(gluon.HybridBlock):
                 # standard block
                 for _, v in op.collect_params().items():
                     # standard blocks are not quantized -> 32 bit
-                    size += v.data().size * 32
+                    size += v.data(ctx=mx.gpu()).size * 32
         return size
 
     def get_bit_operations(self, add_memory_access_cost=False):
