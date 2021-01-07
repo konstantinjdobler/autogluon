@@ -77,7 +77,7 @@ class ENAS_Scheduler(object):
         self.controller = self.searcher.controller
 
         # MIDL init controller params to range of ENAS paper
-        self.controller.initialize(init=initializer.Uniform(0.1), ctx=self.ctx, force_reinit=True)
+        self.controller.initialize(init=initializer.Uniform(0.1), ctx=self.ctx[0], force_reinit=True)
         self.controller_train_iteration = 0
 
 
