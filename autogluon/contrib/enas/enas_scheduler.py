@@ -78,6 +78,8 @@ class ENAS_Scheduler(object):
 
         # MIDL init controller params to range of ENAS paper
         self.controller.initialize(init=initializer.Uniform(0.1), ctx=self.ctx, force_reinit=True)
+        self.controller_train_iteration = 0
+
 
         self.controller_optimizer = mx.gluon.Trainer(
                 self.controller.collect_params(), 'adam',
