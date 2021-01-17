@@ -4,7 +4,6 @@ import logging
 from collections import OrderedDict
 from multiprocessing.pool import ThreadPool
 import math
-
 from mxboard import *
 from mxnet import initializer
 import numpy as np
@@ -22,9 +21,11 @@ logger = logging.getLogger(__name__)
 
 IMAGENET_TRAINING_SAMPLES = 1281167
 
+
 class ENAS_Scheduler(object):
     """ENAS Scheduler, which automatically creates LSTM controller based on the search spaces.
     """
+
     def __init__(self, supernet, train_set='imagenet', val_set=None,
                  train_fn=default_train_fn, eval_fn=default_val_fn, post_epoch_fn=None, post_epoch_save=None,
                  eval_split_pct=0.5, train_args={}, val_args={}, reward_fn=default_reward_fn,
@@ -34,7 +35,7 @@ class ENAS_Scheduler(object):
                  controller_batch_size=10, ema_baseline_decay=0.95,
                  update_arch_frequency=20, checkname='./enas/checkpoint.ag',
                  plot_frequency=0,
-                 custom_batch_fn = None,
+                 custom_batch_fn=None,
                  tensorboard_log_dir=None, training_name='enas_training',
                  **kwargs):
 
@@ -65,7 +66,7 @@ class ENAS_Scheduler(object):
         kwspaces = self.supernet.kwspaces
 
         self.initialize_miscs(train_set, val_set, batch_size, num_cpus, num_gpus,
-                              train_args, val_args, custom_batch_fn= custom_batch_fn)
+                              train_args, val_args, custom_batch_fn=custom_batch_fn)
 
         # create RL searcher/controller
         self.baseline = None
@@ -80,10 +81,9 @@ class ENAS_Scheduler(object):
         self.controller.initialize(init=initializer.Uniform(0.1), ctx=self.ctx[0], force_reinit=True)
         self.controller_train_iteration = 0
 
-
         self.controller_optimizer = mx.gluon.Trainer(
-                self.controller.collect_params(), 'adam',
-                optimizer_params={'learning_rate': controller_lr})
+            self.controller.collect_params(), 'adam',
+            optimizer_params={'learning_rate': controller_lr})
         self.update_arch_frequency = update_arch_frequency
         self.val_acc = 0
         self.eval_acc = 0
@@ -143,16 +143,16 @@ class ENAS_Scheduler(object):
                 val_dataset = val_set
 
             self.train_data = DataLoader(
-                    train_set, batch_size=batch_size, shuffle=True,
-                    last_batch="discard", num_workers=num_cpus)
+                train_set, batch_size=batch_size, shuffle=True,
+                last_batch="discard", num_workers=num_cpus)
             # very important, make shuffle for training contoller
             self.val_data = DataLoader(
-                    val_dataset, batch_size=batch_size, shuffle=True,
-                    num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
+                val_dataset, batch_size=batch_size, shuffle=True,
+                num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
             if self.eval_split_pct != 0:
                 self.eval_data = DataLoader(
-                        eval_dataset, batch_size=batch_size, shuffle=True,
-                        num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
+                    eval_dataset, batch_size=batch_size, shuffle=True,
+                    num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
         elif isinstance(train_set, gluon.data.dataloader.DataLoader) or isinstance(train_set, DataLoader):
             if self.eval_split_pct != 0:
                 val_dataset, eval_dataset = split_val_data(val_set._dataset)
@@ -178,9 +178,9 @@ class ENAS_Scheduler(object):
             assert self.eval_data is not None
 
         iters_per_epoch = len(self.train_data) if hasattr(self.train_data, '__len__') else \
-                IMAGENET_TRAINING_SAMPLES // batch_size
+            IMAGENET_TRAINING_SAMPLES // batch_size
         self.train_args = init_default_train_args(batch_size, self.supernet, self.epochs, iters_per_epoch) \
-                if len(train_args) == 0 else train_args
+            if len(train_args) == 0 else train_args
         self.val_args = val_args
         self.val_args['ctx'] = ctx
         if custom_batch_fn is None:
@@ -198,22 +198,22 @@ class ENAS_Scheduler(object):
         if tag not in self.config_images:
             self.config_images[tag] = np.zeros((len(config_np_array), window_size))
         img = np.zeros((len(config_np_array), window_size))
-        img[:,0:window_size-1] =  self.config_images[tag][:, 1:window_size]
+        img[:, 0:window_size-1] = self.config_images[tag][:, 1:window_size]
 
         if np.max(config_np_array) > 1:
             config_np_array = config_np_array / np.max(config_np_array)
 
-        img[:,window_size-1] = config_np_array
-        self.summary_writer.add_image(tag = tag, image=img, global_step=global_step)
+        img[:, window_size-1] = config_np_array
+        self.summary_writer.add_image(tag=tag, image=img, global_step=global_step)
         self.config_images[tag] = img
-
 
     def run(self):
         tq = tqdm(range(self.epochs))
         self.controller_train_iteration = 0
         for epoch in tq:
             # for recordio data
-            if hasattr(self.train_data, 'reset'): self.train_data.reset()
+            if hasattr(self.train_data, 'reset'):
+                self.train_data.reset()
             tbar = tqdm(self.train_data)
             idx = 0
             train_metric = mx.metric.Accuracy()
@@ -247,7 +247,8 @@ class ENAS_Scheduler(object):
                     graph.attr(rankdir='LR', size='8,3')
                     tbar.set_svg(graph._repr_svg_())
                 if self.baseline:
-                    tbar.set_description('avg reward: {:.2f}, train acc: {:.2f}'.format(self.baseline, train_metric.get()[1]))
+                    tbar.set_description('avg reward: {:.2f}, train acc: {:.2f}'.format(
+                        self.baseline, train_metric.get()[1]))
                 idx += 1
             self.validation(epoch)
             self.evaluation()
@@ -273,10 +274,12 @@ class ENAS_Scheduler(object):
             tq.set_description(msg)
 
     def validation(self, epoch):
-        if hasattr(self.val_data, 'reset'): self.val_data.reset()
+        if hasattr(self.val_data, 'reset'):
+            self.val_data.reset()
         # data iter, avoid memory leak
         it = iter(self.val_data)
-        if hasattr(it, 'reset_sample_times'): it.reset_sample_times()
+        if hasattr(it, 'reset_sample_times'):
+            it.reset_sample_times()
         tbar = tqdm(it)
         # update network arc
         config = self.controller.inference()
@@ -296,10 +299,12 @@ class ENAS_Scheduler(object):
         if self.eval_split_pct == 0:
             self.eval_acc = 0
             return
-        if hasattr(self.eval_data, 'reset'): self.eval_data.reset()
+        if hasattr(self.eval_data, 'reset'):
+            self.eval_data.reset()
         # data iter, avoid memory leak
         it = iter(self.eval_data)
-        if hasattr(it, 'reset_sample_times'): it.reset_sample_times()
+        if hasattr(it, 'reset_sample_times'):
+            it.reset_sample_times()
         tbar = tqdm(it)
         # update network arc
         config = self.controller.inference()
@@ -317,7 +322,7 @@ class ENAS_Scheduler(object):
         try:
             ret = self._data_buffer.pop(self._rcvd_idx)
             self._rcvd_idx += 1
-            return  ret.get(timeout=self._timeout)
+            return ret.get(timeout=self._timeout)
         except Exception:
             self._worker_pool.terminate()
             raise
@@ -338,34 +343,41 @@ class ENAS_Scheduler(object):
         """Run multiple number of trials
         """
         decay = self.ema_decay
-        if hasattr(self.val_data, 'reset'): self.val_data.reset()
-        # update 
+        # update
         metric = mx.metric.Accuracy()
         with mx.autograd.record():
             # sample controller_batch_size number of configurations
             # ASYNC FASHION: self._sample_controller()
             configs, log_probs, entropies = self._async_sample()
             average_config = np.zeros(len(self.supernet.kwspaces))
-            for i, batch in enumerate(self.val_data):
-                if i >= self.controller_batch_size: break
-                average_config += np.array([v for v in configs[i].values()])
-                self.supernet.sample(**configs[i])
-                # schedule the training tasks and gather the reward
-                metric.reset()
-                self.eval_fn(self.supernet, batch, metric=metric, **self.val_args)
-                reward = metric.get()[1]
-                reward = self.reward_fn(reward, self.supernet, self.controller_train_iteration)
-                self.baseline = reward if not self.baseline else self.baseline
-                # substract baseline
-                avg_rewards = mx.nd.array([reward - self.baseline],
-                                          ctx=self.controller.context)
-                # EMA baseline
-                self.baseline = decay * self.baseline + (1 - decay) * reward
-                # negative policy gradient
-                log_prob = log_probs[i]
-                log_prob = log_prob.sum()
-                loss = - log_prob * avg_rewards
-                loss = loss.sum()
+            controller_total_steps_trained = 0
+            while controller_total_steps_trained < self.controller_batch_size:
+                if controller_total_steps_trained >= self.controller_batch_size:
+                    break
+                if hasattr(self.val_data, 'reset'):
+                    self.val_data.reset()
+                for batch in tqdm(self.val_data, leave=False, desc="Training controller on val set..."):
+                    controller_total_steps_trained += 1
+                    if controller_total_steps_trained >= self.controller_batch_size:
+                        break
+                    average_config += np.array([v for v in configs[controller_total_steps_trained].values()])
+                    self.supernet.sample(**configs[controller_total_steps_trained])
+                    # schedule the training tasks and gather the reward
+                    metric.reset()
+                    self.eval_fn(self.supernet, batch, metric=metric, **self.val_args)
+                    reward = metric.get()[1]
+                    reward = self.reward_fn(reward, self.supernet, self.controller_train_iteration)
+                    self.baseline = reward if not self.baseline else self.baseline
+                    # substract baseline
+                    avg_rewards = mx.nd.array([reward - self.baseline],
+                                              ctx=self.controller.context)
+                    # EMA baseline
+                    self.baseline = decay * self.baseline + (1 - decay) * reward
+                    # negative policy gradient
+                    log_prob = log_probs[controller_total_steps_trained]
+                    log_prob = log_prob.sum()
+                    loss = - log_prob * avg_rewards
+                    loss = loss.sum()
 
         # update
         loss.backward()
