@@ -7,7 +7,7 @@ import math
 from mxboard import *
 from mxnet import initializer
 import numpy as np
-
+from tqdm import tqdm as tqdm_original
 from ...searcher import RLSearcher
 from ...scheduler.resource import get_gpu_count, get_cpu_count
 from ...task.image_classification.dataset import get_built_in_dataset
@@ -339,31 +339,42 @@ class ENAS_Scheduler(object):
                                                                    with_details=True)
         return configs, log_probs, entropies
 
+    def _async_sample2(self, batch_size):
+        with mx.autograd.record():
+            # sample controller_batch_size number of configurations
+            configs, log_probs, entropies = self.controller.sample(batch_size=batch_size,
+                                                                   with_details=True)
+        return configs, log_probs, entropies
+
     def train_controller(self):
         """Run multiple number of trials
         """
         decay = self.ema_decay
         # update
-        metric = mx.metric.Accuracy()
-        with mx.autograd.record():
-            # sample controller_batch_size number of configurations
-            # ASYNC FASHION: self._sample_controller()
-            configs, log_probs, entropies = self._async_sample()
-            average_config = np.zeros(len(self.supernet.kwspaces))
-            controller_total_steps_trained = 0
-            while controller_total_steps_trained < self.controller_batch_size:
-                if controller_total_steps_trained >= self.controller_batch_size:
-                    break
-                if hasattr(self.val_data, 'reset'):
-                    self.val_data.reset()
-                for batch in tqdm(self.val_data, leave=False, desc="Training controller on val set..."):
+        # sample controller_batch_size number of configurations
+        # ASYNC FASHION: self._sample_controller()
+        average_config = np.zeros(len(self.supernet.kwspaces))
+        controller_total_steps_trained = 0
+        while controller_total_steps_trained < self.controller_batch_size:
+            if controller_total_steps_trained >= self.controller_batch_size:
+                break
+            if hasattr(self.val_data, 'reset'):
+                self.val_data.reset()
+            # data iter, avoid memory leak
+            it = iter(self.val_data)
+            if hasattr(it, 'reset_sample_times'):
+                it.reset_sample_times()
+
+            for i,batch in enumerate(tqdm(it, leave=False, desc="Training controller on val set...")):
+                with mx.autograd.record():
+                    metric = mx.metric.Accuracy()
+                    configs, log_probs, entropies = self._async_sample2(batch_size=1)
                     controller_total_steps_trained += 1
                     if controller_total_steps_trained >= self.controller_batch_size:
                         break
-                    average_config += np.array([v for v in configs[controller_total_steps_trained].values()])
-                    self.supernet.sample(**configs[controller_total_steps_trained])
+                    average_config += np.array([v for v in configs[0].values()])
+                    self.supernet.sample(**configs[0])
                     # schedule the training tasks and gather the reward
-                    metric.reset()
                     self.eval_fn(self.supernet, batch, metric=metric, **self.val_args)
                     reward = metric.get()[1]
                     reward = self.reward_fn(reward, self.supernet, self.controller_train_iteration)
@@ -374,14 +385,14 @@ class ENAS_Scheduler(object):
                     # EMA baseline
                     self.baseline = decay * self.baseline + (1 - decay) * reward
                     # negative policy gradient
-                    log_prob = log_probs[controller_total_steps_trained]
+                    log_prob = log_probs[0]
                     log_prob = log_prob.sum()
                     loss = - log_prob * avg_rewards
                     loss = loss.sum()
+                    # update
+                loss.backward()
+                self.controller_optimizer.step(len(batch))
 
-        # update
-        loss.backward()
-        self.controller_optimizer.step(self.controller_batch_size)
         self._prefetch_controller()
         average_config = average_config/self.controller_batch_size
         self._visualize_config_in_tensorboard(average_config, "controller_train_config",
