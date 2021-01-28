@@ -15,6 +15,10 @@ from ...task.image_classification.utils import *
 from ...utils import (mkdir, save, load, update_params, collect_params, DataLoader, tqdm, in_ipynb)
 from .enas_utils import *
 
+
+# This is our own custom import
+import wandb
+
 __all__ = ['ENAS_Scheduler']
 
 logger = logging.getLogger(__name__)
@@ -36,7 +40,7 @@ class ENAS_Scheduler(object):
                  update_arch_frequency=20, checkname='./enas/checkpoint.ag',
                  plot_frequency=0,
                  custom_batch_fn=None,
-                 tensorboard_log_dir=None, training_name='enas_training',
+                 tensorboard_log_dir=None, training_name='enas_training', wandb_enabled=False,
                  **kwargs):
 
         num_cpus = get_cpu_count() if num_cpus > get_cpu_count() else num_cpus
@@ -61,6 +65,8 @@ class ENAS_Scheduler(object):
         self.tensorboard_log_dir = tensorboard_log_dir
         self.summary_writer = SummaryWriter(logdir=self.tensorboard_log_dir + '/' + training_name, flush_secs=5,
                                             verbose=False)
+        self.wandb_enabled = wandb_enabled
+        
         self.config_images = {}
 
         kwspaces = self.supernet.kwspaces
@@ -264,6 +270,8 @@ class ENAS_Scheduler(object):
             self.summary_writer.add_scalar(tag='validation_accuracy', value=self.val_acc, global_step=epoch)
             self.summary_writer.add_scalar(tag='evaluation_accuracy', value=self.eval_acc, global_step=epoch)
             self.summary_writer.add_scalar(tag='avg_reward', value=self.baseline or 0, global_step=epoch)
+            if self.wandb_enabled:
+                wandb.log({"training_accuracy": train_acc, "validation_accuracy": self.val_acc, "avg_reward": self.baseline or 0, "epoch": epoch})
             epoch_average_config = epoch_average_config / len(tbar)
             self._visualize_config_in_tensorboard(epoch_average_config, "train_epoch_average_config", epoch)
             self._visualize_config_in_tensorboard(config_array, "train_epoch_last_config", epoch)
