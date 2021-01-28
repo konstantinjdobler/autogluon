@@ -393,7 +393,6 @@ class ENAS_Scheduler(object):
                 loss.backward()
                 self.controller_optimizer.step(len(batch))
 
-        self._prefetch_controller()
         average_config = average_config/self.controller_batch_size
         self._visualize_config_in_tensorboard(average_config, "controller_train_config",
                                               self.controller_train_iteration)
