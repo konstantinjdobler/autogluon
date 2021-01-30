@@ -41,6 +41,7 @@ class ENAS_Scheduler(object):
                  plot_frequency=0,
                  custom_batch_fn=None,
                  tensorboard_log_dir=None, training_name='enas_training', wandb_enabled=False,
+                 add_entropy_to_reward_weight=0,
                  **kwargs):
 
         num_cpus = get_cpu_count() if num_cpus > get_cpu_count() else num_cpus
@@ -66,6 +67,7 @@ class ENAS_Scheduler(object):
         self.summary_writer = SummaryWriter(logdir=self.tensorboard_log_dir + '/' + training_name, flush_secs=5,
                                             verbose=False)
         self.wandb_enabled = wandb_enabled
+        self.add_entropy_to_reward_weight = add_entropy_to_reward_weight
         
         self.config_images = {}
 
@@ -386,6 +388,10 @@ class ENAS_Scheduler(object):
                     self.eval_fn(self.supernet, batch, metric=metric, **self.val_args)
                     reward = metric.get()[1]
                     reward = self.reward_fn(reward, self.supernet, self.controller_train_iteration)
+
+                    # add entropy to reward as in ENAS, if self.add_entropy_to_reward_weight is 0, this is a no-op
+                    reward = reward + self.add_entropy_to_reward_weight * entropies[0]
+
                     self.baseline = reward if not self.baseline else self.baseline
                     # substract baseline
                     avg_rewards = mx.nd.array([reward - self.baseline],
