@@ -41,7 +41,7 @@ class ENAS_Scheduler(object):
                  plot_frequency=0,
                  custom_batch_fn=None,
                  tensorboard_log_dir=None, training_name='enas_training', wandb_enabled=False,
-                 add_entropy_to_reward_weight=0,
+                 add_entropy_to_reward_weight=0, softmax_temperature=5, tanh_constant=2.5,
                  **kwargs):
 
         num_cpus = get_cpu_count() if num_cpus > get_cpu_count() else num_cpus
@@ -81,7 +81,7 @@ class ENAS_Scheduler(object):
         self.ema_decay = ema_baseline_decay
         self.searcher = RLSearcher(
             kwspaces, controller_type=controller_type, prefetch=4,
-            num_workers=4, softmax_temperature=5, tanh_constant=2.5)
+            num_workers=4, softmax_temperature=softmax_temperature, tanh_constant=tanh_constant)
         # controller setup
         self.controller = self.searcher.controller
 
