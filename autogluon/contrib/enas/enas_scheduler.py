@@ -350,10 +350,12 @@ class ENAS_Scheduler(object):
         return configs, log_probs, entropies
 
     def _async_sample2(self, batch_size):
+
         with mx.autograd.record():
             # sample controller_batch_size number of configurations
+
             configs, log_probs, entropies = self.controller.sample(batch_size=batch_size,
-                                                                   with_details=True)
+                                                                   with_details=True, with_entropy=True)
         return configs, log_probs, entropies
 
     def train_controller(self):
@@ -388,9 +390,10 @@ class ENAS_Scheduler(object):
                     self.eval_fn(self.supernet, batch, metric=metric, **self.val_args)
                     reward = metric.get()[1]
                     reward = self.reward_fn(reward, self.supernet, self.controller_train_iteration)
-
-                    # add entropy to reward as in ENAS, if self.add_entropy_to_reward_weight is 0, this is a no-op
-                    reward = reward + self.add_entropy_to_reward_weight * entropies[0]
+                    
+                    # add entropy to reward as in ENAS, if self.add_entropy_to_reward_weight is 0, don't do it
+                    if self.add_entropy_to_reward_weight > 0:
+                        reward = reward + self.add_entropy_to_reward_weight * entropies.sum().asscalar()
 
                     self.baseline = reward if not self.baseline else self.baseline
                     # substract baseline
