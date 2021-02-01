@@ -147,7 +147,6 @@ def enas_net(**kwvars):
             def kwspaces(self):
                 return self._kwspaces
 
-            @property
             def sample(self, **configs):
                 striped_keys = [k.split('.')[0] for k in configs.keys()]
                 for k in striped_keys:
