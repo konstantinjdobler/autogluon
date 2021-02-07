@@ -68,7 +68,7 @@ class ENAS_Scheduler(object):
                                             verbose=False)
         self.wandb_enabled = wandb_enabled
         self.add_entropy_to_reward_weight = add_entropy_to_reward_weight
-        
+
         self.config_images = {}
 
         kwspaces = self.supernet.kwspaces
@@ -273,7 +273,8 @@ class ENAS_Scheduler(object):
             self.summary_writer.add_scalar(tag='evaluation_accuracy', value=self.eval_acc, global_step=epoch)
             self.summary_writer.add_scalar(tag='avg_reward', value=self.baseline or 0, global_step=epoch)
             if self.wandb_enabled:
-                wandb.log({"training_accuracy": train_acc, "validation_accuracy": self.val_acc, "avg_reward": self.baseline or 0, "epoch": epoch})
+                wandb.log({"training_accuracy": train_acc, "validation_accuracy": self.val_acc,
+                           "avg_reward": self.baseline or 0, "epoch": epoch})
             epoch_average_config = epoch_average_config / len(tbar)
             self._visualize_config_in_tensorboard(epoch_average_config, "train_epoch_average_config", epoch)
             self._visualize_config_in_tensorboard(config_array, "train_epoch_last_config", epoch)
@@ -377,7 +378,7 @@ class ENAS_Scheduler(object):
             if hasattr(it, 'reset_sample_times'):
                 it.reset_sample_times()
 
-            for i,batch in enumerate(tqdm(it, leave=False, desc="Training controller on val set...")):
+            for i, batch in enumerate(tqdm(it, leave=False, desc="Training controller on val set...")):
                 with mx.autograd.record():
                     metric = mx.metric.Accuracy()
                     configs, log_probs, entropies = self._async_sample2(batch_size=1)
@@ -390,7 +391,7 @@ class ENAS_Scheduler(object):
                     self.eval_fn(self.supernet, batch, metric=metric, **self.val_args)
                     reward = metric.get()[1]
                     reward = self.reward_fn(reward, self.supernet, self.controller_train_iteration)
-                    
+
                     # add entropy to reward as in ENAS, if self.add_entropy_to_reward_weight is 0, don't do it
                     if self.add_entropy_to_reward_weight > 0:
                         reward = reward + self.add_entropy_to_reward_weight * entropies.sum().asscalar()
