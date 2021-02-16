@@ -11,9 +11,11 @@ from tqdm import tqdm as tqdm_original
 from ...searcher import RLSearcher
 from ...scheduler.resource import get_gpu_count, get_cpu_count
 from ...task.image_classification.dataset import get_built_in_dataset
-from ...task.image_classification.utils import *
 from ...utils import (mkdir, save, load, update_params, collect_params, DataLoader, tqdm, in_ipynb)
 from .enas_utils import *
+from .utils import default_train_fn
+from ...task.image_classification.utils import default_val_fn, default_batch_fn
+
 
 
 # This is our own custom import
@@ -41,7 +43,7 @@ class ENAS_Scheduler(object):
                  plot_frequency=0,
                  custom_batch_fn=None,
                  tensorboard_log_dir=None, training_name='enas_training', wandb_enabled=False,
-                 add_entropy_to_reward_weight=0, softmax_temperature=5, tanh_constant=2.5,
+                 add_entropy_to_reward_weight=0, softmax_temperature=5, tanh_constant=2.5, train_mode=False,
                  **kwargs):
 
         num_cpus = get_cpu_count() if num_cpus > get_cpu_count() else num_cpus
@@ -64,6 +66,7 @@ class ENAS_Scheduler(object):
         self.warmup_epochs = warmup_epochs
         self.controller_batch_size = controller_batch_size
         self.tensorboard_log_dir = tensorboard_log_dir
+        self.train_mode = train_mode
         self.summary_writer = SummaryWriter(logdir=self.tensorboard_log_dir + '/' + training_name, flush_secs=5,
                                             verbose=False)
         self.wandb_enabled = wandb_enabled
@@ -187,7 +190,7 @@ class ENAS_Scheduler(object):
 
         iters_per_epoch = len(self.train_data) if hasattr(self.train_data, '__len__') else \
             IMAGENET_TRAINING_SAMPLES // batch_size
-        self.train_args = init_default_train_args(batch_size, self.supernet, self.epochs, iters_per_epoch) \
+        self.train_args = init_default_train_args(batch_size, self.supernet, self.epochs, iters_per_epoch, self.train_mode) \
             if len(train_args) == 0 else train_args
         self.val_args = val_args
         self.val_args['ctx'] = ctx

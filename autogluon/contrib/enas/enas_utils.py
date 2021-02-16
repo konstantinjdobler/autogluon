@@ -22,7 +22,7 @@ def init_sgd_train_args(batch_size, net, epochs, iters_per_epoch):
     return train_args
 
 
-def init_default_train_args(batch_size, net, epochs, iters_per_epoch):
+def init_default_train_args(batch_size, net, epochs, iters_per_epoch, train_mode):
     train_args = {}
     base_lr = 0.1 * batch_size / 256
     lr_scheduler = gcv.utils.LRScheduler('cosine', base_lr=base_lr, target_lr=0.0001,
@@ -31,6 +31,7 @@ def init_default_train_args(batch_size, net, epochs, iters_per_epoch):
     train_args['trainer'] = gluon.Trainer(net.collect_params(), 'adam', optimizer_params)
     train_args['batch_size'] = batch_size
     train_args['criterion'] = gluon.loss.SoftmaxCrossEntropyLoss()
+    train_args['train_mode'] = train_mode
     return train_args
 
 
