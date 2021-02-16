@@ -36,9 +36,9 @@ class ENAS_Scheduler(object):
                  train_fn=default_train_fn, eval_fn=default_val_fn, post_epoch_fn=None, post_epoch_save=None,
                  eval_split_pct=0.5, train_args={}, val_args={}, reward_fn=default_reward_fn,
                  num_gpus=0, num_cpus=4,
-                 batch_size=256, epochs=120, warmup_epochs=5,
+                 batch_size=256, epochs=120, warmup_epochs=5, validation_batch_size=256,
                  controller_lr=1e-3, controller_type='lstm',
-                 controller_batch_size=10, ema_baseline_decay=0.95,
+                 controller_steps=10, ema_baseline_decay=0.95,
                  update_arch_frequency=20, checkname='./enas/checkpoint.ag',
                  plot_frequency=0,
                  custom_batch_fn=None,
@@ -64,7 +64,7 @@ class ENAS_Scheduler(object):
         self.plot_frequency = plot_frequency
         self.epochs = epochs
         self.warmup_epochs = warmup_epochs
-        self.controller_batch_size = controller_batch_size
+        self.controller_steps = controller_steps
         self.tensorboard_log_dir = tensorboard_log_dir
         self.train_mode = train_mode
         self.summary_writer = SummaryWriter(logdir=self.tensorboard_log_dir + '/' + training_name, flush_secs=5,
@@ -76,7 +76,7 @@ class ENAS_Scheduler(object):
 
         kwspaces = self.supernet.kwspaces
 
-        self.initialize_miscs(train_set, val_set, batch_size, num_cpus, num_gpus,
+        self.initialize_miscs(train_set, val_set, batch_size, validation_batch_size, num_cpus, num_gpus,
                               train_args, val_args, custom_batch_fn=custom_batch_fn)
 
         # create RL searcher/controller
@@ -111,7 +111,7 @@ class ENAS_Scheduler(object):
     def __del__(self):
         self.summary_writer.close()
 
-    def initialize_miscs(self, train_set, val_set, batch_size, num_cpus, num_gpus,
+    def initialize_miscs(self, train_set, val_set, batch_size, validation_batch_size, num_cpus, num_gpus,
                          train_args, val_args, custom_batch_fn=None):
         """Initialize framework related miscs, such as train/val data and train/val
         function arguments.
@@ -144,7 +144,7 @@ class ENAS_Scheduler(object):
         if isinstance(train_set, str):
             train_set = get_built_in_dataset(dataset_name, train=True, batch_size=batch_size,
                                              num_workers=num_cpus, shuffle=True, fine_label=True)
-            val_set = get_built_in_dataset(dataset_name, train=False, batch_size=batch_size,
+            val_set = get_built_in_dataset(dataset_name, train=False, batch_size=validation_batch_size,
                                            num_workers=num_cpus, shuffle=True, fine_label=True)
         if isinstance(train_set, gluon.data.Dataset):
             # split the validation set into an evaluation and validation set
@@ -158,12 +158,12 @@ class ENAS_Scheduler(object):
                 last_batch="discard", num_workers=num_cpus)
             # very important, make shuffle for training contoller
             self.val_data = DataLoader(
-                val_dataset, batch_size=batch_size, shuffle=True,
-                num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
+                val_dataset, batch_size=validation_batch_size, shuffle=True,
+                num_workers=num_cpus, prefetch=0, sample_times=self.controller_steps)
             if self.eval_split_pct != 0:
                 self.eval_data = DataLoader(
                     eval_dataset, batch_size=batch_size, shuffle=True,
-                    num_workers=num_cpus, prefetch=0, sample_times=self.controller_batch_size)
+                    num_workers=num_cpus, prefetch=0, sample_times=self.controller_steps)
         elif isinstance(train_set, gluon.data.dataloader.DataLoader) or isinstance(train_set, DataLoader):
             if self.eval_split_pct != 0:
                 val_dataset, eval_dataset = split_val_data(val_set._dataset)
@@ -349,7 +349,7 @@ class ENAS_Scheduler(object):
     def _async_sample(self):
         with mx.autograd.record():
             # sample controller_batch_size number of configurations
-            configs, log_probs, entropies = self.controller.sample(batch_size=self.controller_batch_size,
+            configs, log_probs, entropies = self.controller.sample(batch_size=self.controller_steps,
                                                                    with_details=True)
         return configs, log_probs, entropies
 
@@ -371,8 +371,8 @@ class ENAS_Scheduler(object):
         # ASYNC FASHION: self._sample_controller()
         average_config = np.zeros(len(self.supernet.kwspaces))
         controller_total_steps_trained = 0
-        while controller_total_steps_trained < self.controller_batch_size:
-            if controller_total_steps_trained >= self.controller_batch_size:
+        while controller_total_steps_trained < self.controller_steps:
+            if controller_total_steps_trained >= self.controller_steps:
                 break
             if hasattr(self.val_data, 'reset'):
                 self.val_data.reset()
@@ -386,7 +386,7 @@ class ENAS_Scheduler(object):
                     metric = mx.metric.Accuracy()
                     configs, log_probs, entropies = self._async_sample2(batch_size=1)
                     controller_total_steps_trained += 1
-                    if controller_total_steps_trained >= self.controller_batch_size:
+                    if controller_total_steps_trained >= self.controller_steps:
                         break
                     average_config += np.array([v for v in configs[0].values()])
                     self.supernet.sample(**configs[0])
@@ -414,7 +414,7 @@ class ENAS_Scheduler(object):
                 loss.backward()
                 self.controller_optimizer.step(len(batch))
 
-        average_config = average_config/self.controller_batch_size
+        average_config = average_config/self.controller_steps
         self._visualize_config_in_tensorboard(average_config, "controller_train_config",
                                               self.controller_train_iteration)
 
