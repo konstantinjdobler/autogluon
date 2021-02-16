@@ -39,22 +39,22 @@ def default_train_fn(epoch, num_epochs, net, batch, batch_size, criterion, train
         else:
             loss = [criterion(yhat, y.astype(dtype, copy=False)) for yhat, y in zip(outputs, label)]
 
-    for l in loss:
-        l.backward()
-    trainer.step(batch_size, ignore_stale_grad=True)
+        for l in loss:
+            l.backward()
+        trainer.step(batch_size, ignore_stale_grad=True)
 
-    if metric:
-        if mixup:
-            output_softmax = [
-                nd.SoftmaxActivation(out.astype('float32', copy=False))
-                for out in outputs
-            ]
-            metric.update(label, output_softmax)
-        else:
-            if label_smoothing:
-                metric.update(hard_label, outputs)
+        if metric:
+            if mixup:
+                output_softmax = [
+                    nd.SoftmaxActivation(out.astype('float32', copy=False))
+                    for out in outputs
+                ]
+                metric.update(label, output_softmax)
             else:
-                metric.update(label, outputs)
-        return metric
-    else:
-        return
+                if label_smoothing:
+                    metric.update(hard_label, outputs)
+                else:
+                    metric.update(label, outputs)
+            return metric
+        else:
+            return
