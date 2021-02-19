@@ -43,7 +43,7 @@ class ENAS_Scheduler(object):
                  plot_frequency=0,
                  custom_batch_fn=None,
                  tensorboard_log_dir=None, training_name='enas_training', wandb_enabled=False,
-                 add_entropy_to_reward_weight=0, softmax_temperature=5, tanh_constant=2.5, train_mode=False,
+                 add_entropy_to_reward_weight=0, softmax_temperature=5, tanh_constant=2.5, train_mode=True,
                  **kwargs):
 
         num_cpus = get_cpu_count() if num_cpus > get_cpu_count() else num_cpus
