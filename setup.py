@@ -47,7 +47,7 @@ requirements = [
     'dask>=2.6.0',
     'cryptography>=2.8',
     'distributed>=2.6.0',
-    'ConfigSpace<=0.4.10',
+    'ConfigSpace',
     'gluoncv>=0.5.0,<1.0',
     'gluonnlp==0.8.1',
     'graphviz<0.9',
